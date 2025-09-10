@@ -25,6 +25,16 @@
       z-index: 1000;
     }
     .info-box h3 { margin: 0 0 10px; }
+
+    /* כפתור locate */
+    .leaflet-control-locate {
+      background: white;
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 26px;
+      text-align: center;
+      padding: 2px 6px;
+    }
   </style>
 </head>
 <body>
@@ -48,6 +58,9 @@
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
+
+  var userMarker = null;
+  var lastUserLatLng = null;
 
   // טען את ה-GeoJSON
   fetch('holon-zones.geojson')
@@ -79,8 +92,8 @@
           let props = foundZone.properties;
           document.getElementById('zone-info').innerHTML = `
             <h3>אזור שנמצא בו</h3>
-            <p><b>מפקח:</b> ${props["מפקח:"] || "לא צוין"}</p>
-            <p><b>מנהל עבודה:</b> ${props["מנהל עבודה:"] || "לא צוין"}</p>
+            <p><b>מפקח:</b> ${props["מפקח:"] || props["מפקח"] || "לא צוין"}</p>
+            <p><b>מנהל עבודה:</b> ${props["מנהל עבודה:"] || props["מנהל עבודה"] || "לא צוין"}</p>
             <p><b>קבלן:</b> ${props["קבלן:"] || "לא צוין"}</p>
           `;
         } else {
@@ -88,11 +101,11 @@
         }
       }
 
-      // מיקום GPS חי
-      map.locate({ setView: true, watch: true, enableHighAccuracy: true });
-      var userMarker = null;
+      // GPS - עדכון מיקום ברקע בלי לקפוץ
+      map.locate({ watch: true, enableHighAccuracy: true });
 
       map.on('locationfound', function(e) {
+        lastUserLatLng = e.latlng;
         showZoneInfo(e.latlng);
         if (userMarker) {
           userMarker.setLatLng(e.latlng);
@@ -101,17 +114,30 @@
         }
       });
 
-      // הוספת חיפוש כתובת
+      // הוספת חיפוש כתובת (ללא מרקרים)
       L.Control.geocoder({
         defaultMarkGeocode: false
       })
       .on('markgeocode', function(e) {
         var latlng = e.geocode.center;
-        L.marker(latlng).addTo(map).bindPopup(e.geocode.name).openPopup();
-        map.setView(latlng, 16);
-        showZoneInfo(latlng);
+        map.setView(latlng, 16);   // קפיצה לכתובת
+        showZoneInfo(latlng);      // בדיקה לאיזה אזור שייך
       })
       .addTo(map);
+
+      // כפתור locate
+      var locateControl = L.control({position: 'topleft'});
+      locateControl.onAdd = function(map) {
+        var div = L.DomUtil.create('div', 'leaflet-control-locate leaflet-bar');
+        div.innerHTML = '🎯';
+        div.onclick = function() {
+          if (lastUserLatLng) {
+            map.setView(lastUserLatLng, 16);
+          }
+        }
+        return div;
+      };
+      locateControl.addTo(map);
 
     });
 </script>
