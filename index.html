@@ -2,11 +2,13 @@
 <html lang="he">
 <head>
   <meta charset="UTF-8">
-  <title>Holon Zones</title>
+  <title>מפת פיקוח גינון חולון</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+
   <style>
     #map { height: 100vh; }
     .info-box {
@@ -20,7 +22,7 @@
       box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
       font-family: Arial, sans-serif;
       direction: rtl;
-      z-index: 1000; /* Ensures info-box stays above the map */
+      z-index: 1000;
     }
     .info-box h3 { margin: 0 0 10px; }
   </style>
@@ -36,9 +38,10 @@
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <!-- Turf JS -->
 <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
+<!-- Geocoder -->
+<script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
 
 <script>
-  // צור מפה
   var map = L.map('map').setView([32.016, 34.77], 13);
 
   // שכבת מפה בסיסית
@@ -46,11 +49,10 @@
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  // טען את הקובץ GeoJSON שלך
+  // טען את ה-GeoJSON
   fetch('holon-zones.geojson')
     .then(res => res.json())
     .then(data => {
-      // הוסף את האזורים למפה
       var zones = L.geoJSON(data, {
         style: function(feature) {
           return {
@@ -62,13 +64,9 @@
         }
       }).addTo(map);
 
-      // מעקב אחרי GPS
-      map.locate({ setView: true, watch: true, enableHighAccuracy: true });
-
-      var userMarker = null;
-
-      map.on('locationfound', function(e) {
-        var point = turf.point([e.longitude, e.latitude]);
+      // פונקציה לבדיקה והצגת מידע
+      function showZoneInfo(latlng) {
+        var point = turf.point([latlng.lng, latlng.lat]);
         var foundZone = null;
 
         data.features.forEach(f => {
@@ -77,7 +75,6 @@
           }
         });
 
-        // הצגת נתונים מתיבת ה-properties
         if (foundZone) {
           let props = foundZone.properties;
           document.getElementById('zone-info').innerHTML = `
@@ -89,14 +86,33 @@
         } else {
           document.getElementById('zone-info').innerHTML = `<h3>מחוץ לאזורים</h3>`;
         }
+      }
 
-        // עדכון מיקום משתמש
+      // מיקום GPS חי
+      map.locate({ setView: true, watch: true, enableHighAccuracy: true });
+      var userMarker = null;
+
+      map.on('locationfound', function(e) {
+        showZoneInfo(e.latlng);
         if (userMarker) {
           userMarker.setLatLng(e.latlng);
         } else {
           userMarker = L.circleMarker(e.latlng, { radius: 8, color: 'blue' }).addTo(map);
         }
       });
+
+      // הוספת חיפוש כתובת
+      L.Control.geocoder({
+        defaultMarkGeocode: false
+      })
+      .on('markgeocode', function(e) {
+        var latlng = e.geocode.center;
+        L.marker(latlng).addTo(map).bindPopup(e.geocode.name).openPopup();
+        map.setView(latlng, 16);
+        showZoneInfo(latlng);
+      })
+      .addTo(map);
+
     });
 </script>
 </body>
