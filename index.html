@@ -45,11 +45,42 @@
       text-align: center;
       padding: 2px 6px;
     }
+
+    /* כפתור אפשר מיקום */
+    #enableLocation {
+      position: absolute;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 25px;
+      padding: 12px 20px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      display: none;
+      z-index: 1100;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+
+    /* אנימציית פולס */
+    #enableLocation.pulse {
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: translateX(-50%) scale(1); }
+      50% { transform: translateX(-50%) scale(1.1); }
+      100% { transform: translateX(-50%) scale(1); }
+    }
   </style>
 </head>
 <body>
 
 <div id="map"></div>
+<button id="enableLocation">📍 אפשר מיקום</button>
 <div class="info-box" id="zone-info">
   <h3>ממתין למיקום...</h3>
 </div>
@@ -73,6 +104,7 @@
   var lastUserLatLng = null;
   var searchMarker = null;
   var searchActive = false;
+  var locationTimeout;
 
   // פונקציה לבדיקה והצגת מידע
   function showZoneInfo(latlng) {
@@ -100,19 +132,22 @@
     }
   }
 
-  // בקשה יזומה להרשאת GPS (iOS אוהב את זה)
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(function(position) {
-      var latlng = L.latLng(position.coords.latitude, position.coords.longitude);
-      map.setView(latlng, 16);
-      showZoneInfo(latlng);
-    });
-  }
-
   // GPS - עדכון מיקום ברקע בלי לקפוץ
   map.locate({ watch: true, enableHighAccuracy: true });
 
+  // אם אחרי 5 שניות אין מיקום -> הצג כפתור "אפשר מיקום"
+  locationTimeout = setTimeout(() => {
+    var btn = document.getElementById('enableLocation');
+    btn.style.display = 'block';
+    btn.classList.add('pulse');
+  }, 5000);
+
   map.on('locationfound', function(e) {
+    clearTimeout(locationTimeout);
+    var btn = document.getElementById('enableLocation');
+    btn.style.display = 'none';
+    btn.classList.remove('pulse');
+
     lastUserLatLng = e.latlng;
     if (userMarker) {
       userMarker.setLatLng(e.latlng);
@@ -120,9 +155,24 @@
       userMarker = L.circleMarker(e.latlng, { radius: 8, color: 'blue' }).addTo(map);
     }
 
-    // הצגת מידע רק אם אין חיפוש פעיל
     if (!searchActive) {
       showZoneInfo(e.latlng);
+    }
+  });
+
+  // בקשה יזומה דרך כפתור "אפשר מיקום"
+  document.getElementById('enableLocation').addEventListener('click', function() {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(function(position) {
+        var latlng = L.latLng(position.coords.latitude, position.coords.longitude);
+        map.setView(latlng, 16);
+        showZoneInfo(latlng);
+        var btn = document.getElementById('enableLocation');
+        btn.style.display = 'none';
+        btn.classList.remove('pulse');
+      }, function(err) {
+        alert("לא ניתן לקבל מיקום: " + err.message);
+      });
     }
   });
 
@@ -130,7 +180,7 @@
   fetch('holon-zones.geojson')
     .then(res => res.json())
     .then(data => {
-      window.zonesData = data; // שמירה גלובלית
+      window.zonesData = data;
       var zones = L.geoJSON(data, {
         style: function(feature) {
           return {
@@ -149,22 +199,15 @@
   })
   .on('markgeocode', function(e) {
     var latlng = e.geocode.center;
-
-    // סגירת מקלדת במובייל
     document.activeElement.blur();
 
-    // נקה מרקר קודם
     if (searchMarker) {
       map.removeLayer(searchMarker);
     }
 
-    // הוסף מרקר חדש לכתובת
     searchMarker = L.marker(latlng).addTo(map).bindPopup(e.geocode.name).openPopup();
-
     map.setView(latlng, 16);
     showZoneInfo(latlng);
-
-    // הפוך למצב חיפוש פעיל
     searchActive = true;
   })
   .addTo(map);
@@ -178,9 +221,7 @@
       if (lastUserLatLng) {
         map.setView(lastUserLatLng, 16);
         showZoneInfo(lastUserLatLng);
-        searchActive = false; // החזרת השליטה ל-GPS
-
-        // הסרת מרקר חיפוש אם יש
+        searchActive = false;
         if (searchMarker) {
           map.removeLayer(searchMarker);
           searchMarker = null;
