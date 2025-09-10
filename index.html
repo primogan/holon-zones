@@ -61,6 +61,8 @@
 
   var userMarker = null;
   var lastUserLatLng = null;
+  var searchMarker = null;
+  var searchActive = false;
 
   // טען את ה-GeoJSON
   fetch('holon-zones.geojson')
@@ -106,22 +108,41 @@
 
       map.on('locationfound', function(e) {
         lastUserLatLng = e.latlng;
-        showZoneInfo(e.latlng);
         if (userMarker) {
           userMarker.setLatLng(e.latlng);
         } else {
           userMarker = L.circleMarker(e.latlng, { radius: 8, color: 'blue' }).addTo(map);
         }
+
+        // הצגת מידע רק אם אין חיפוש פעיל
+        if (!searchActive) {
+          showZoneInfo(e.latlng);
+        }
       });
 
-      // הוספת חיפוש כתובת (ללא מרקרים)
+      // הוספת חיפוש כתובת
       L.Control.geocoder({
         defaultMarkGeocode: false
       })
       .on('markgeocode', function(e) {
         var latlng = e.geocode.center;
-        map.setView(latlng, 16);   // קפיצה לכתובת
-        showZoneInfo(latlng);      // בדיקה לאיזה אזור שייך
+
+        // סגירת מקלדת במובייל
+        document.activeElement.blur();
+
+        // נקה מרקר קודם
+        if (searchMarker) {
+          map.removeLayer(searchMarker);
+        }
+
+        // הוסף מרקר חדש לכתובת
+        searchMarker = L.marker(latlng).addTo(map).bindPopup(e.geocode.name).openPopup();
+
+        map.setView(latlng, 16);
+        showZoneInfo(latlng);
+
+        // הפוך למצב חיפוש פעיל
+        searchActive = true;
       })
       .addTo(map);
 
@@ -133,6 +154,14 @@
         div.onclick = function() {
           if (lastUserLatLng) {
             map.setView(lastUserLatLng, 16);
+            showZoneInfo(lastUserLatLng);
+            searchActive = false; // החזרת השליטה ל-GPS
+
+            // הסרת מרקר חיפוש אם יש
+            if (searchMarker) {
+              map.removeLayer(searchMarker);
+              searchMarker = null;
+            }
           }
         }
         return div;
