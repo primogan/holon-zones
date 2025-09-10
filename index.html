@@ -2,41 +2,82 @@
 <html lang="he">
 <head>
   <meta charset="UTF-8">
-  <title>מפת פיקוח גינון חולון</title>
+  <title>מערכת מיפוי אזורי גינון עירוני</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <!-- Manifest for PWA -->
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#4CAF50">
-
-  <!-- Apple specific meta tags for iOS -->
-  <link rel="apple-touch-icon" sizes="180x180" href="icon-192.png">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="פיקוח חולון">
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
   <style>
-    #map { height: 100vh; }
+    body, html { margin: 0; padding: 0; height: 100%; font-family: Arial, sans-serif; }
+    #map { height: 100%; }
+
+    /* Splash Screen */
+    #splash {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      animation: fadeOut 1s ease 2.5s forwards;
+    }
+    #splash img {
+      width: 180px;
+      height: auto;
+      animation: zoomIn 1.5s ease;
+    }
+    #splash h1 {
+      margin-top: 20px;
+      font-size: 20px;
+      color: #2e7d32;
+      animation: fadeIn 2s ease;
+    }
+    @keyframes zoomIn {
+      0% { transform: scale(0.8); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes fadeIn {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+    @keyframes fadeOut {
+      to { opacity: 0; visibility: hidden; }
+    }
+
+    /* Info Box */
     .info-box {
       position: absolute;
       bottom: 0;
       left: 0;
       right: 0;
-      background: white;
+      background: #f9f9f9;
+      border-top: 4px solid #4CAF50;
       padding: 15px;
-      border-radius: 12px 12px 0 0;
       box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
-      font-family: Arial, sans-serif;
       direction: rtl;
       z-index: 1000;
     }
-    .info-box h3 { margin: 0 0 10px; }
+    .info-box h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+      color: #2e7d32;
+    }
+    .info-item {
+      margin: 5px 0;
+      font-size: 15px;
+    }
+    .info-item i {
+      margin-left: 8px;
+      color: #2e7d32;
+    }
 
-    /* כפתור locate */
+    /* Locate Button */
     .leaflet-control-locate {
       background: white;
       cursor: pointer;
@@ -45,42 +86,16 @@
       text-align: center;
       padding: 2px 6px;
     }
-
-    /* כפתור אפשר מיקום */
-    #enableLocation {
-      position: absolute;
-      bottom: 80px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #4CAF50;
-      color: white;
-      border: none;
-      border-radius: 25px;
-      padding: 12px 20px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-      display: none;
-      z-index: 1100;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-    }
-
-    /* אנימציית פולס */
-    #enableLocation.pulse {
-      animation: pulse 1.5s infinite;
-    }
-
-    @keyframes pulse {
-      0% { transform: translateX(-50%) scale(1); }
-      50% { transform: translateX(-50%) scale(1.1); }
-      100% { transform: translateX(-50%) scale(1); }
-    }
   </style>
 </head>
 <body>
 
+<div id="splash">
+  <img src="25C01862-75FB-4DA1-8C82-A998DAF5A5C7.png" alt="Holon Logo">
+  <h1>מערכת מיפוי אזורי גינון עירוני</h1>
+</div>
+
 <div id="map"></div>
-<button id="enableLocation">📍 אפשר מיקום</button>
 <div class="info-box" id="zone-info">
   <h3>ממתין למיקום...</h3>
 </div>
@@ -95,7 +110,6 @@
 <script>
   var map = L.map('map').setView([32.016, 34.77], 13);
 
-  // שכבת מפה בסיסית
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
@@ -104,9 +118,7 @@
   var lastUserLatLng = null;
   var searchMarker = null;
   var searchActive = false;
-  var locationTimeout;
 
-  // פונקציה לבדיקה והצגת מידע
   function showZoneInfo(latlng) {
     var point = turf.point([latlng.lng, latlng.lat]);
     var foundZone = null;
@@ -122,61 +134,30 @@
     if (foundZone) {
       let props = foundZone.properties;
       document.getElementById('zone-info').innerHTML = `
-        <h3>אזור שנמצא בו</h3>
-        <p><b>מפקח:</b> ${props["מפקח:"] || props["מפקח"] || "לא צוין"}</p>
-        <p><b>מנהל עבודה:</b> ${props["מנהל עבודה:"] || props["מנהל עבודה"] || "לא צוין"}</p>
-        <p><b>קבלן:</b> ${props["קבלן:"] || "לא צוין"}</p>
+        <h3>נמצא באזור</h3>
+        <div class="info-item"><i class="fas fa-user-shield"></i>מפקח: ${props["מפקח:"] || props["מפקח"] || "לא צוין"}</div>
+        <div class="info-item"><i class="fas fa-hard-hat"></i>מנהל עבודה: ${props["מנהל עבודה:"] || props["מנהל עבודה"] || "לא צוין"}</div>
+        <div class="info-item"><i class="fas fa-industry"></i>קבלן: ${props["קבלן:"] || "לא צוין"}</div>
       `;
     } else {
       document.getElementById('zone-info').innerHTML = `<h3>מחוץ לאזורים</h3>`;
     }
   }
 
-  // GPS - עדכון מיקום ברקע בלי לקפוץ
   map.locate({ watch: true, enableHighAccuracy: true });
 
-  // אם אחרי 5 שניות אין מיקום -> הצג כפתור "אפשר מיקום"
-  locationTimeout = setTimeout(() => {
-    var btn = document.getElementById('enableLocation');
-    btn.style.display = 'block';
-    btn.classList.add('pulse');
-  }, 5000);
-
   map.on('locationfound', function(e) {
-    clearTimeout(locationTimeout);
-    var btn = document.getElementById('enableLocation');
-    btn.style.display = 'none';
-    btn.classList.remove('pulse');
-
     lastUserLatLng = e.latlng;
     if (userMarker) {
       userMarker.setLatLng(e.latlng);
     } else {
       userMarker = L.circleMarker(e.latlng, { radius: 8, color: 'blue' }).addTo(map);
     }
-
     if (!searchActive) {
       showZoneInfo(e.latlng);
     }
   });
 
-  // בקשה יזומה דרך כפתור "אפשר מיקום"
-  document.getElementById('enableLocation').addEventListener('click', function() {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(function(position) {
-        var latlng = L.latLng(position.coords.latitude, position.coords.longitude);
-        map.setView(latlng, 16);
-        showZoneInfo(latlng);
-        var btn = document.getElementById('enableLocation');
-        btn.style.display = 'none';
-        btn.classList.remove('pulse');
-      }, function(err) {
-        alert("לא ניתן לקבל מיקום: " + err.message);
-      });
-    }
-  });
-
-  // טען את ה-GeoJSON
   fetch('holon-zones.geojson')
     .then(res => res.json())
     .then(data => {
@@ -193,18 +174,15 @@
       }).addTo(map);
     });
 
-  // הוספת חיפוש כתובת
   L.Control.geocoder({
     defaultMarkGeocode: false
   })
   .on('markgeocode', function(e) {
     var latlng = e.geocode.center;
     document.activeElement.blur();
-
     if (searchMarker) {
       map.removeLayer(searchMarker);
     }
-
     searchMarker = L.marker(latlng).addTo(map).bindPopup(e.geocode.name).openPopup();
     map.setView(latlng, 16);
     showZoneInfo(latlng);
@@ -212,7 +190,6 @@
   })
   .addTo(map);
 
-  // כפתור locate
   var locateControl = L.control({position: 'topleft'});
   locateControl.onAdd = function(map) {
     var div = L.DomUtil.create('div', 'leaflet-control-locate leaflet-bar');
