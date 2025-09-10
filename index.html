@@ -74,10 +74,63 @@
   var searchMarker = null;
   var searchActive = false;
 
+  // פונקציה לבדיקה והצגת מידע
+  function showZoneInfo(latlng) {
+    var point = turf.point([latlng.lng, latlng.lat]);
+    var foundZone = null;
+
+    if (!window.zonesData) return;
+
+    window.zonesData.features.forEach(f => {
+      if (turf.booleanPointInPolygon(point, f)) {
+        foundZone = f;
+      }
+    });
+
+    if (foundZone) {
+      let props = foundZone.properties;
+      document.getElementById('zone-info').innerHTML = `
+        <h3>אזור שנמצא בו</h3>
+        <p><b>מפקח:</b> ${props["מפקח:"] || props["מפקח"] || "לא צוין"}</p>
+        <p><b>מנהל עבודה:</b> ${props["מנהל עבודה:"] || props["מנהל עבודה"] || "לא צוין"}</p>
+        <p><b>קבלן:</b> ${props["קבלן:"] || "לא צוין"}</p>
+      `;
+    } else {
+      document.getElementById('zone-info').innerHTML = `<h3>מחוץ לאזורים</h3>`;
+    }
+  }
+
+  // בקשה יזומה להרשאת GPS (iOS אוהב את זה)
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(function(position) {
+      var latlng = L.latLng(position.coords.latitude, position.coords.longitude);
+      map.setView(latlng, 16);
+      showZoneInfo(latlng);
+    });
+  }
+
+  // GPS - עדכון מיקום ברקע בלי לקפוץ
+  map.locate({ watch: true, enableHighAccuracy: true });
+
+  map.on('locationfound', function(e) {
+    lastUserLatLng = e.latlng;
+    if (userMarker) {
+      userMarker.setLatLng(e.latlng);
+    } else {
+      userMarker = L.circleMarker(e.latlng, { radius: 8, color: 'blue' }).addTo(map);
+    }
+
+    // הצגת מידע רק אם אין חיפוש פעיל
+    if (!searchActive) {
+      showZoneInfo(e.latlng);
+    }
+  });
+
   // טען את ה-GeoJSON
   fetch('holon-zones.geojson')
     .then(res => res.json())
     .then(data => {
+      window.zonesData = data; // שמירה גלובלית
       var zones = L.geoJSON(data, {
         style: function(feature) {
           return {
@@ -88,97 +141,55 @@
           };
         }
       }).addTo(map);
+    });
 
-      // פונקציה לבדיקה והצגת מידע
-      function showZoneInfo(latlng) {
-        var point = turf.point([latlng.lng, latlng.lat]);
-        var foundZone = null;
+  // הוספת חיפוש כתובת
+  L.Control.geocoder({
+    defaultMarkGeocode: false
+  })
+  .on('markgeocode', function(e) {
+    var latlng = e.geocode.center;
 
-        data.features.forEach(f => {
-          if (turf.booleanPointInPolygon(point, f)) {
-            foundZone = f;
-          }
-        });
+    // סגירת מקלדת במובייל
+    document.activeElement.blur();
 
-        if (foundZone) {
-          let props = foundZone.properties;
-          document.getElementById('zone-info').innerHTML = `
-            <h3>אזור שנמצא בו</h3>
-            <p><b>מפקח:</b> ${props["מפקח:"] || props["מפקח"] || "לא צוין"}</p>
-            <p><b>מנהל עבודה:</b> ${props["מנהל עבודה:"] || props["מנהל עבודה"] || "לא צוין"}</p>
-            <p><b>קבלן:</b> ${props["קבלן:"] || "לא צוין"}</p>
-          `;
-        } else {
-          document.getElementById('zone-info').innerHTML = `<h3>מחוץ לאזורים</h3>`;
-        }
-      }
+    // נקה מרקר קודם
+    if (searchMarker) {
+      map.removeLayer(searchMarker);
+    }
 
-      // GPS - עדכון מיקום ברקע בלי לקפוץ
-      map.locate({ watch: true, enableHighAccuracy: true });
+    // הוסף מרקר חדש לכתובת
+    searchMarker = L.marker(latlng).addTo(map).bindPopup(e.geocode.name).openPopup();
 
-      map.on('locationfound', function(e) {
-        lastUserLatLng = e.latlng;
-        if (userMarker) {
-          userMarker.setLatLng(e.latlng);
-        } else {
-          userMarker = L.circleMarker(e.latlng, { radius: 8, color: 'blue' }).addTo(map);
-        }
+    map.setView(latlng, 16);
+    showZoneInfo(latlng);
 
-        // הצגת מידע רק אם אין חיפוש פעיל
-        if (!searchActive) {
-          showZoneInfo(e.latlng);
-        }
-      });
+    // הפוך למצב חיפוש פעיל
+    searchActive = true;
+  })
+  .addTo(map);
 
-      // הוספת חיפוש כתובת
-      L.Control.geocoder({
-        defaultMarkGeocode: false
-      })
-      .on('markgeocode', function(e) {
-        var latlng = e.geocode.center;
+  // כפתור locate
+  var locateControl = L.control({position: 'topleft'});
+  locateControl.onAdd = function(map) {
+    var div = L.DomUtil.create('div', 'leaflet-control-locate leaflet-bar');
+    div.innerHTML = '🎯';
+    div.onclick = function() {
+      if (lastUserLatLng) {
+        map.setView(lastUserLatLng, 16);
+        showZoneInfo(lastUserLatLng);
+        searchActive = false; // החזרת השליטה ל-GPS
 
-        // סגירת מקלדת במובייל
-        document.activeElement.blur();
-
-        // נקה מרקר קודם
+        // הסרת מרקר חיפוש אם יש
         if (searchMarker) {
           map.removeLayer(searchMarker);
+          searchMarker = null;
         }
-
-        // הוסף מרקר חדש לכתובת
-        searchMarker = L.marker(latlng).addTo(map).bindPopup(e.geocode.name).openPopup();
-
-        map.setView(latlng, 16);
-        showZoneInfo(latlng);
-
-        // הפוך למצב חיפוש פעיל
-        searchActive = true;
-      })
-      .addTo(map);
-
-      // כפתור locate
-      var locateControl = L.control({position: 'topleft'});
-      locateControl.onAdd = function(map) {
-        var div = L.DomUtil.create('div', 'leaflet-control-locate leaflet-bar');
-        div.innerHTML = '🎯';
-        div.onclick = function() {
-          if (lastUserLatLng) {
-            map.setView(lastUserLatLng, 16);
-            showZoneInfo(lastUserLatLng);
-            searchActive = false; // החזרת השליטה ל-GPS
-
-            // הסרת מרקר חיפוש אם יש
-            if (searchMarker) {
-              map.removeLayer(searchMarker);
-              searchMarker = null;
-            }
-          }
-        }
-        return div;
-      };
-      locateControl.addTo(map);
-
-    });
+      }
+    }
+    return div;
+  };
+  locateControl.addTo(map);
 </script>
 </body>
 </html>
