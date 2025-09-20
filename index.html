@@ -2,134 +2,154 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <title>מערכת מיפוי אזורי גינון עירוני</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <style>
-    body { margin:0; font-family: Arial, sans-serif; background:#f0f0f0; }
-    .screen { display:none; height:100vh; width:100%; align-items:center; justify-content:center; flex-direction:column; }
-    .active { display:flex; }
-    .circle-btn {
-      width:150px; height:150px; border-radius:50%;
-      display:flex; align-items:center; justify-content:center;
-      margin:20px; font-size:20px; font-weight:bold; cursor:pointer;
-      box-shadow:0 4px 6px rgba(0,0,0,0.3);
-      transition: transform 0.2s;
-    }
-    .circle-btn:hover { transform: scale(1.05); }
-    #map { width:100%; height:100%; }
-    .zone-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
-    .popup-btn {
-      display:block; margin-top:8px; padding:6px;
-      background:#3755A0; color:#fff; text-align:center; border-radius:4px;
-      cursor:pointer;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>מערכת מיפוי חולון</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<style>
+body, html { margin:0; padding:0; height:100%; font-family:Arial, sans-serif; }
+
+/* ספלאש */
+#splash {
+display:flex;
+flex-direction:column;
+justify-content:center;
+align-items:center;
+height:100%;
+background:#f0f0f0;
+}
+#splash h1 { margin-bottom:30px; }
+.bubble {
+width:140px; height:140px;
+border-radius:50%;
+background:#4CAF50;
+color:white;
+display:flex;
+justify-content:center;
+align-items:center;
+margin:15px;
+cursor:pointer;
+font-weight:bold;
+font-size:16px;
+transition: transform 0.2s, background 0.3s;
+box-shadow:0 4px 10px rgba(0,0,0,0.2);
+}
+.bubble:hover { transform:scale(1.1); background:#388E3C; }
+
+/* מפות */
+#mapContainer {
+display:none;
+height:100%;
+width:100%;
+position:relative;
+}
+#map {
+height:100%;
+width:100%;
+}
+#backBtn {
+position:absolute;
+top:10px;
+left:10px;
+z-index:1000;
+background:#fff;
+border:none;
+padding:8px 12px;
+cursor:pointer;
+border-radius:6px;
+font-weight:bold;
+box-shadow:0 2px 6px rgba(0,0,0,0.2);
+}
+</style>
 </head>
 <body>
-
-<!-- מסך פתיחה -->
-<div id="home" class="screen active">
-  <div class="circle-btn" style="background:#4CAF50; color:white;" onclick="showScreen('zones-map')">אזורי פיקוח</div>
-  <div class="circle-btn" style="background:#FFC107; color:black;" onclick="showScreen('zones-select')">פניות גיזום</div>
+<!-- ספלאש -->
+<div id="splash">
+<h1>מערכת מיפוי אזורי גינון עירוני</h1>
+<div class="bubble" onclick="openMap('zones')">אזורי פיקוח</div>
+<div class="bubble" onclick="openMap('cases')">פניות גיזום</div>
 </div>
 
-<!-- מסך בחירת אזור -->
-<div id="zones-select" class="screen">
-  <h2>בחר אזור</h2>
-  <div class="zone-grid">
-    <div class="circle-btn" style="background:#FF5722; color:white;" onclick="loadZoneCases(1)">אזור 1</div>
-    <div class="circle-btn" style="background:#9C27B0; color:white;" onclick="loadZoneCases(2)">אזור 2</div>
-    <div class="circle-btn" style="background:#2196F3; color:white;" onclick="loadZoneCases(3)">אזור 3</div>
-    <div class="circle-btn" style="background:#009688; color:white;" onclick="loadZoneCases(4)">אזור 4</div>
-    <div class="circle-btn" style="background:#795548; color:white;" onclick="loadZoneCases(5)">אזור 5</div>
-    <div class="circle-btn" style="background:#607D8B; color:white;" onclick="loadZoneCases(6)">אזור 6</div>
-  </div>
-  <button onclick="showScreen('home')">חזרה</button>
-</div>
-
-<!-- מסך מפה לאזורי פיקוח -->
-<div id="zones-map" class="screen">
-  <div id="map"></div>
-  <button onclick="showScreen('home')">חזרה</button>
-</div>
-
-<!-- מסך מפה לפניות אזור -->
-<div id="cases-map" class="screen">
-  <div id="map-cases"></div>
-  <button onclick="showScreen('zones-select')">חזרה</button>
+<!-- מפת עבודה -->
+<div id="mapContainer">
+<button id="backBtn" onclick="goBack()">חזרה</button>
+<div id="map"></div>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
-function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
+let map;
+let currentLayer = null;
+
+function initMap() {
+map = L.map('map').setView([32.015, 34.78], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+maxZoom: 19
+}).addTo(map);
 }
 
-// ================== מפה אזורי פיקוח ==================
-let map = L.map('map').setView([32.015, 34.77], 13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
-fetch('holon-zones.geojson')
-  .then(res => res.json())
-  .then(data => {
-    L.geoJSON(data, {
-      style: f => ({color:f.properties.color || 'blue', weight:2, fillOpacity:0.1}),
-      onEachFeature:(feature, layer)=>{
-        layer.bindPopup(`<b>אזור:</b> ${feature.properties.name}<br>
-                         <b>מפקח:</b> ${feature.properties.supervisor}<br>
-                         <b>מנהל עבודה:</b> ${feature.properties.manager}<br>
-                         <b>קבלן:</b> ${feature.properties.contractor}`);
-      }
-    }).addTo(map);
-  });
+function openMap(mode) {
+document.getElementById("splash").style.display = "none";
+document.getElementById("mapContainer").style.display = "block";
 
-// ================== מפות פניות ==================
-let mapCases;
-let casesLayer;
+if (!map) { initMap(); }
+setTimeout(() => { map.invalidateSize(); }, 300);
 
-function loadZoneCases(zoneId) {
-  showScreen('cases-map');
-  if (!mapCases) {
-    mapCases = L.map('map-cases').setView([32.015, 34.77], 14);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(mapCases);
-  }
-  fetch('cases.geojson')
-    .then(res => res.json())
-    .then(data => {
-      if (casesLayer) casesLayer.remove();
-      casesLayer = L.geoJSON(data, {
-        filter: f => f.properties.zone === zoneId,
-        pointToLayer: (feature, latlng) => {
-          return L.marker(latlng, {icon: L.icon({
-            iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/yellow-dot.png',
-            iconSize:[32,32], iconAnchor:[16,32]
-          })});
-        },
-        onEachFeature: (feature, layer) => {
-          layer.bindPopup(`
-            <b>כתובת:</b> ${feature.properties.address}<br>
-            <b>תיאור:</b> ${feature.properties.description}<br>
-            <span class="popup-btn" onclick="markCompleted(${feature.properties.id})">הטיפול הסתיים</span>
-          `);
-        }
-      }).addTo(mapCases);
-    });
+// נקה שכבות ישנות
+if (currentLayer) {
+map.removeLayer(currentLayer);
+currentLayer = null;
 }
 
-function markCompleted(id) {
-  casesLayer.eachLayer(layer => {
-    if (layer.feature.properties.id === id) {
-      layer.setIcon(L.icon({
-        iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/red-dot.png',
-        iconSize:[32,32], iconAnchor:[16,32]
-      }));
-      layer.closePopup();
-    }
-  });
+if (mode === "zones") {
+fetch("holon-zones.geojson")
+.then(res => res.json())
+.then(data => {
+currentLayer = L.geoJSON(data, {
+style: { color: "blue", weight: 2, fillOpacity: 0.2 },
+onEachFeature: (feature, layer) => {
+if (feature.properties && feature.properties.name) {
+layer.bindPopup("אזור: " + feature.properties.name);
+}
+}
+}).addTo(map);
+map.fitBounds(currentLayer.getBounds());
+})
+.catch(err => alert("בעיה בטעינת קובץ holon-zones.geojson: " + err));
+} else if (mode === "cases") {
+fetch("cases.geojson")
+.then(res => res.json())
+.then(data => {
+currentLayer = L.geoJSON(data, {
+pointToLayer: (feature, latlng) => {
+return L.marker(latlng, { title: feature.properties.address });
+},
+onEachFeature: (feature, layer) => {
+let info = `<b>כתובת:</b> ${feature.properties.address || "לא צויין"}<br>
+<b>תיאור:</b> ${feature.properties.description || "—"}<br>
+<button onclick="closeCase(this)">טיפול הסתיים</button>`;
+layer.bindPopup(info);
+}
+}).addTo(map);
+map.fitBounds(currentLayer.getBounds());
+})
+.catch(err => alert("בעיה בטעינת קובץ cases.geojson: " + err));
+}
+}
+
+function goBack() {
+document.getElementById("mapContainer").style.display = "none";
+document.getElementById("splash").style.display = "flex";
+}
+
+// סימון טיפול הסתיים
+function closeCase(btn) {
+let marker = btn.closest(".leaflet-popup")._source;
+if (marker) {
+marker.setIcon(new L.Icon.Default({ className: "finished" }));
+marker.closePopup();
+}
 }
 </script>
-
 </body>
 </html>
