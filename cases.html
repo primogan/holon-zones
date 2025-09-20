@@ -1,131 +1,159 @@
-
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8">
   <title>פניות גיזום</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
     body {
-      margin: 0;
       font-family: Arial, sans-serif;
       text-align: center;
-      direction: rtl;
+      margin: 0;
+      padding: 0;
     }
-    h1 {
-      margin: 20px;
-    }
-    .zones-container {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 20px;
-      margin-top: 30px;
+    #zones, #map {
+      margin-top: 20px;
     }
     .zone-bubble {
-      width: 120px;
-      height: 120px;
+      display: inline-block;
+      width: 100px;
+      height: 100px;
+      line-height: 100px;
       border-radius: 50%;
-      background: #4CAF50;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      background-color: #4a90e2;
       color: white;
       font-size: 20px;
+      margin: 15px;
       cursor: pointer;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.2);
       transition: transform 0.2s;
     }
     .zone-bubble:hover {
       transform: scale(1.1);
-      background: #45a049;
+      background-color: #357ABD;
     }
     #map {
-      height: 80vh;
-      margin: 20px;
+      width: 100%;
+      height: 90vh;
       display: none;
     }
-    .back-btn {
-      margin: 15px;
-      padding: 10px 20px;
-      background: #333;
+    .end-btn {
+      margin-top: 10px;
+      display: block;
+      padding: 6px 12px;
+      background: #d9534f;
       color: #fff;
       border: none;
       border-radius: 5px;
       cursor: pointer;
-      display: none;
+    }
+    .end-btn:hover {
+      background: #c9302c;
     }
   </style>
 </head>
 <body>
-  <h1>בחר איזור פיקוח לפניות גיזום</h1>
-  <div class="zones-container">
-    <div class="zone-bubble" onclick="openZone(1)">איזור 1</div>
-    <div class="zone-bubble" onclick="openZone(2)">איזור 2</div>
-    <div class="zone-bubble" onclick="openZone(3)">איזור 3</div>
-    <div class="zone-bubble" onclick="openZone(4)">איזור 4</div>
-    <div class="zone-bubble" onclick="openZone(5)">איזור 5</div>
-    <div class="zone-bubble" onclick="openZone(6)">איזור 6</div>
+  <h1>פניות גיזום</h1>
+  <div id="zones">
+    <div class="zone-bubble" data-zone="1">אזור 1</div>
+    <div class="zone-bubble" data-zone="2">אזור 2</div>
+    <div class="zone-bubble" data-zone="3">אזור 3</div>
+    <div class="zone-bubble" data-zone="4">אזור 4</div>
+    <div class="zone-bubble" data-zone="5">אזור 5</div>
+    <div class="zone-bubble" data-zone="6">אזור 6</div>
   </div>
 
-  <button class="back-btn" onclick="goBack()">חזור</button>
   <div id="map"></div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
     let map;
+    let casesLayer;
+    let zonesLayer;
 
-    function openZone(zoneId) {
-      document.querySelector('.zones-container').style.display = 'none';
-      document.querySelector('.back-btn').style.display = 'inline-block';
+    document.querySelectorAll('.zone-bubble').forEach(bubble => {
+      bubble.addEventListener('click', () => {
+        const zoneNumber = bubble.getAttribute('data-zone');
+        showZoneMap(zoneNumber);
+      });
+    });
+
+    function showZoneMap(zoneNumber) {
+      document.getElementById('zones').style.display = 'none';
       document.getElementById('map').style.display = 'block';
 
       if (!map) {
-        map = L.map('map').setView([32.016, 34.77], 13);
+        map = L.map('map').setView([32.015, 34.77], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19
         }).addTo(map);
       }
 
+      if (zonesLayer) zonesLayer.remove();
+      if (casesLayer) casesLayer.remove();
+
+      // טען את הפוליגון של האזור
+      fetch('holon-zones.geojson')
+        .then(res => res.json())
+        .then(data => {
+          zonesLayer = L.geoJSON(data, {
+            style: f => ({
+              color: "#4a90e2",
+              weight: 2,
+              fillColor: "#4a90e2",
+              fillOpacity: 0.2
+            }),
+            filter: f => f.properties.id == zoneNumber
+          }).addTo(map);
+          map.fitBounds(zonesLayer.getBounds());
+        });
+
+      // טען את הפניות
       fetch('holon_trees_with_zones.geojson')
         .then(res => res.json())
         .then(data => {
-          const layer = L.geoJSON(data, {
-            filter: f => f.properties.שם_איזור == zoneId,
+          casesLayer = L.geoJSON(data, {
+            pointToLayer: (feature, latlng) => {
+              return L.marker(latlng, { icon: yellowIcon });
+            },
+            filter: f => f.properties.שם_איזור == zoneNumber,
             onEachFeature: (feature, layer) => {
-              layer.bindPopup(`
-                <b>כתובת:</b> ${feature.properties.כתובת}<br>
-                <b>סטטוס:</b> <span id="status-${feature.properties.id || Math.random()}">פתוח</span><br>
-                <button onclick="markDone(this)">הטיפול הסתיים</button>
-              `);
+              const props = feature.properties;
+              const div = document.createElement('div');
+              div.innerHTML = `
+                <strong>כתובת:</strong> ${props['כתובת'] || ''}<br>
+                <strong>קבלן:</strong> ${props['קבלן:'] || ''}<br>
+                <strong>מפקח:</strong> ${props['מפקח:'] || ''}<br>
+                <strong>מנהל עבודה:</strong> ${props['מנהל עבודה:'] || ''}<br>
+              `;
+              const btn = document.createElement('button');
+              btn.className = "end-btn";
+              btn.innerText = "הטיפול הסתיים";
+              btn.onclick = () => {
+                layer.setIcon(redIcon);
+                layer.closePopup();
+              };
+              div.appendChild(btn);
+              layer.bindPopup(div);
             }
           }).addTo(map);
-          map.fitBounds(layer.getBounds());
         });
     }
 
-    function goBack() {
-      document.querySelector('.zones-container').style.display = 'flex';
-      document.querySelector('.back-btn').style.display = 'none';
-      document.getElementById('map').style.display = 'none';
-      if (map) {
-        map.eachLayer(layer => {
-          if (!(layer instanceof L.TileLayer)) {
-            map.removeLayer(layer);
-          }
-        });
-      }
-    }
+    // אייקונים
+    const yellowIcon = new L.Icon({
+      iconUrl: 'https://maps.google.com/mapfiles/ms/icons/yellow-dot.png',
+      iconSize: [32, 32],
+      iconAnchor: [16, 32],
+      popupAnchor: [0, -32]
+    });
 
-    function markDone(button) {
-      const popup = button.closest('.leaflet-popup-content');
-      const statusSpan = popup.querySelector('span');
-      if (statusSpan) {
-        statusSpan.textContent = 'טופל';
-        statusSpan.style.color = 'red';
-      }
-    }
+    const redIcon = new L.Icon({
+      iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+      iconSize: [32, 32],
+      iconAnchor: [16, 32],
+      popupAnchor: [0, -32]
+    });
   </script>
 </body>
 </html>
